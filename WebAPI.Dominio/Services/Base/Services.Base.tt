@@ -1,0 +1,308 @@
+﻿<#@ template debug="true" hostspecific="true" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="System.ComponentModel.DataAnnotations" #>
+<#@ assembly name="$(SolutionDir)WebAPI.Bd\bin\Debug\WebAPI.Bd.dll" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Reflection" #>
+<#@ import namespace="System.ComponentModel.DataAnnotations" #>
+<#@ import namespace="System.ComponentModel.DataAnnotations.Schema" #>
+<#@ import namespace="WebAPI.Bd.Model" #>
+
+<#
+    //CAMBIAR: Namespace del entity
+    string namespaceEntity = "WebAPI.Bd.Model";
+    //CAMBIAR: Namespace del DTO
+    string namespaceDTO = "WebAPI.Domain.Entities";
+    //CAMBIAR: Namespace Mapper
+    string namespaceMapper = "WebAPI.Domain.Mapper";
+    //CAMBIAR: Tipo del contexto
+    Type contextType = typeof(WebAPIContext); 
+    
+
+    IEnumerable<Type> tipos = GetTypesInNamespace(Assembly.GetAssembly(contextType), namespaceEntity).Where(x=>!x.Equals(contextType) && !x.BaseType.Equals(typeof(System.Enum)) && !x.Name.Equals("<>c"));
+
+    string namespaceClass = "WebAPI.Domain.Services.Base";
+    string namespaceRepo = "WebAPI.Bd.Repositories";
+
+    foreach(Type tipo in tipos)
+    {
+        IEnumerable<PropertyInfo> primaryKeys = tipo.GetProperties().Where(x=>IsPrimaryKey(x));
+        IEnumerable<PropertyInfo> uniqueKeys = tipo.GetProperties().Where(x=>IsUniqueKey(x));
+        IEnumerable<PropertyInfo> foreignKeys = tipo.GetProperties().Where(x=>IsForeignKey(x));
+    
+        
+#>
+using System;
+using System.Linq;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Data.Entity;
+using <#=namespaceRepo#>;
+using <#=namespaceDTO#>;
+using <#=namespaceMapper #>;
+
+namespace <#= namespaceClass #>
+{
+    public abstract class Service<#= tipo.Name #>Base
+	{
+		protected readonly IRepository<#= tipo.Name #> _Repository<#= tipo.Name #>;
+
+		/// <summary>
+        /// Constructor de la clase <#= tipo.Name #> 
+        /// </summary>
+		public Service<#= tipo.Name #>Base()
+		{
+			_Repository<#= tipo.Name #> = new Repository<#= tipo.Name #>(new <#=namespaceEntity#>.<#=contextType.Name#>());
+		}
+
+		/// <summary>
+        /// Metodo para obtener todos los <#= tipo.Name #> 
+        /// </summary>
+        /// <returns>IQueryable con todos los <#= tipo.Name #></returns>
+		public IEnumerable<Entities.<#= tipo.Name #>> Obtener<#= tipo.Name #>()
+		{
+			return _Repository<#= tipo.Name #>.Get<#= tipo.Name #>().ToList().Select(x=>Mapper<#= tipo.Name #>.MapTo(x));
+		}
+
+		/// <summary>
+        /// Metodo para obtener todos los <#= tipo.Name #> asincronamente
+        /// </summary>
+        /// <returns>IQueryable con todos los <#= tipo.Name #></returns>
+		public async Task<IEnumerable<Entities.<#= tipo.Name #>>> Obtener<#= tipo.Name #>Async()
+		{
+			return (await _Repository<#= tipo.Name #>.Get<#= tipo.Name #>().ToListAsync()).Select(x=>Mapper<#= tipo.Name #>.MapTo(x));
+		}
+
+        <# 
+        string constructor = string.Join(", ", primaryKeys.Select(x=>$"{GetTypeString(x.PropertyType)} {FormatNameVariable(x.Name)}"));
+        string expression = string.Join(", ", primaryKeys.Select(x=>$"{FormatNameVariable(x.Name)}"));
+        #>
+
+        /// <summary>
+        /// Obtener un <#= tipo.Name #> por su clave primaria
+        /// </summary>
+<#
+        foreach(PropertyInfo primaryKey in primaryKeys){
+#>
+		/// <param name="<#= FormatNameVariable(primaryKey.Name) #>"><#= primaryKey.Name #></param>
+<#
+		}
+#>
+        /// <returns><#= tipo.Name #>  seleccionado por su clave primaria</returns>
+		public async Task<Entities.<#= tipo.Name #>> Obtener<#= tipo.Name #>PorClavePrimariaAsync(<#=constructor #>)
+		{
+			return Mapper<#= tipo.Name #>.MapTo(await _Repository<#= tipo.Name #>.Get<#= tipo.Name #>ByPrimaryKeyAsync(<#= expression #>));
+		}
+
+        /// <summary>
+        /// Obtener un <#= tipo.Name #> por su clave primaria
+        /// </summary>
+<#
+        foreach(PropertyInfo primaryKey in primaryKeys){
+#>
+		/// <param name="<#= FormatNameVariable(primaryKey.Name) #>"><#= primaryKey.Name #></param>
+<#
+		}
+#>
+        /// <returns><#= tipo.Name #>  seleccionado por su clave primaria</returns>
+		public Entities.<#= tipo.Name #> Obtener<#= tipo.Name #>PorClavePrimaria(<#=constructor #>)
+		{
+			return Mapper<#= tipo.Name #>.MapTo(_Repository<#= tipo.Name #>.Get<#= tipo.Name #>ByPrimaryKey(<#= expression #>));
+		}
+<#
+		foreach(PropertyInfo uniqueKey in uniqueKeys){
+                     
+        string constructorUnique = $"{GetTypeString(uniqueKey.PropertyType)} {FormatNameVariable(uniqueKey.Name)}";
+        string expressionUnique = FormatNameVariable(uniqueKey.Name);
+        
+#>
+        /// <summary>
+        /// Obtener un <#= tipo.Name #> por su clave unica <#= uniqueKey.Name #>
+        /// </summary>
+		/// <param name="<#= FormatNameVariable(uniqueKey.Name) #>"><#= uniqueKey.Name #></param>
+        /// <returns><#= tipo.Name #> seleccionado por su clave única</returns>
+		public async Task<Entities.<#= tipo.Name #>> Obtener<#= tipo.Name #>Por<#= uniqueKey.Name #>Async(<#=constructorUnique #>)
+		{
+			return Mapper<#= tipo.Name #>.MapTo(await _Repository<#= tipo.Name #>.Get<#= tipo.Name #>By<#= uniqueKey.Name #>Async(<#= expressionUnique #>));
+        
+		}
+
+        /// <summary>
+        /// Obtener un <#= tipo.Name #> por su clave unica <#= uniqueKey.Name #>
+        /// </summary>
+		/// <param name="<#= FormatNameVariable(uniqueKey.Name) #>"><#= uniqueKey.Name #></param>
+        /// <returns><#= tipo.Name #> seleccionado por su clave única</returns>
+		public <#= tipo.Name #> Obtener<#= tipo.Name #>Por<#= uniqueKey.Name #>(<#=constructorUnique #>)
+		{
+			return Mapper<#= tipo.Name #>.MapTo(_Repository<#= tipo.Name #>.Get<#= tipo.Name #>By<#= uniqueKey.Name #>(<#= expressionUnique #>));
+		}
+<#
+		}
+#>
+<#
+		foreach(PropertyInfo foreignKey in foreignKeys){
+                     
+        string constructorForeign = $"{GetTypeString(foreignKey.PropertyType)} {FormatNameVariable(foreignKey.Name)}";
+        string expressionForeign = FormatNameVariable(foreignKey.Name);
+        
+#>
+        /// <summary>
+        /// Obtener un <#= tipo.Name #> por su clave unica <#= foreignKey.Name #>
+        /// </summary>
+		/// <param name="<#= FormatNameVariable(foreignKey.Name) #>"><#= foreignKey.Name #></param>
+        /// <returns><#= tipo.Name #> seleccionado por su clave única</returns>
+		public async Task<IEnumerable<Entities.<#= tipo.Name #>>> Obtener<#= tipo.Name #>Por<#= foreignKey.Name #>Async(<#=constructorForeign #>)
+		{
+			return (await _Repository<#= tipo.Name #>.Get<#= tipo.Name #>By<#= foreignKey.Name #>(<#= expressionForeign #>).ToListAsync()).Select(x=>Mapper<#= tipo.Name #>.MapTo(x));
+		}
+
+        /// <summary>
+        /// Obtener un <#= tipo.Name #> por su clave unica <#= foreignKey.Name #>
+        /// </summary>
+		/// <param name="<#= FormatNameVariable(foreignKey.Name) #>"><#= foreignKey.Name #></param>
+        /// <returns><#= tipo.Name #> seleccionado por su clave única</returns>
+		public IEnumerable<Entities.<#= tipo.Name #>> Obtener<#= tipo.Name #>Por<#= foreignKey.Name #>(<#=constructorForeign #>)
+		{
+			return (_Repository<#= tipo.Name #>.Get<#= tipo.Name #>By<#= foreignKey.Name #>(<#= expressionForeign #>).ToList()).Select(x=>Mapper<#= tipo.Name #>.MapTo(x));
+		}
+<#
+		}
+#>
+
+		/// <summary>
+        /// Crea una instancia de <#= tipo.Name #> en la base de datos
+        /// </summary>
+        /// <param name="source"><#= tipo.Name #> a crear</param>
+        /// <returns><#= tipo.Name #> creado</returns>
+		public virtual async Task<Entities.<#= tipo.Name #>> Crear<#= tipo.Name #>Async(Entities.<#= tipo.Name #> source)
+		{
+			return Mapper<#= tipo.Name #>.MapToRelated(await _Repository<#= tipo.Name #>.Create<#= tipo.Name #>Async(Mapper<#= tipo.Name #>.MapTo(source)));
+		}
+
+		/// <summary>
+        /// Crea una instancia de <#= tipo.Name #> en la base de datos
+        /// </summary>
+        /// <param name="source"><#= tipo.Name #> a crear</param>
+        /// <returns><#= tipo.Name #> creado</returns>
+		public virtual Entities.<#= tipo.Name #> Crear<#= tipo.Name #>(Entities.<#= tipo.Name #> source)
+		{
+			return Mapper<#= tipo.Name #>.MapToRelated(_Repository<#= tipo.Name #>.Create<#= tipo.Name #>(Mapper<#= tipo.Name #>.MapTo(source)));
+		}
+
+
+		/// <summary>
+        /// Modifica una instancia de <#= tipo.Name #> en la base de datos
+        /// </summary>
+        /// <param name="source"><#= tipo.Name #> a modificar</param>
+        /// <returns>Número de <#= tipo.Name #> modificados</returns>
+		public virtual async Task<int> Actualizar<#= tipo.Name #>Async(Entities.<#= tipo.Name #> source)
+		{
+			return await _Repository<#= tipo.Name #>.Update<#= tipo.Name #>Async(Mapper<#= tipo.Name #>.MapTo(source));
+		}
+
+		/// <summary>
+        /// Modifica una instancia de <#= tipo.Name #> en la base de datos
+        /// </summary>
+        /// <param name="source"><#= tipo.Name #> a modificar</param>
+        /// <returns>Número de <#= tipo.Name #> modificados</returns>
+		public virtual int Actualizar<#= tipo.Name #>(Entities.<#= tipo.Name #> source)
+		{
+			return _Repository<#= tipo.Name #>.Update<#= tipo.Name #>(Mapper<#= tipo.Name #>.MapTo(source));
+		}
+
+		/// <summary>
+        /// Borra una instancia de <#= tipo.Name #> en la base de datos
+        /// </summary>
+        /// <param name="source"><#= tipo.Name #> a borrar</param>
+        /// <returns>Número de <#= tipo.Name #> borrados</returns>
+		public virtual async Task<int> Borrar<#= tipo.Name #>Async(Entities.<#= tipo.Name #> source)
+		{
+			return await _Repository<#= tipo.Name #>.Delete<#= tipo.Name #>Async(Mapper<#= tipo.Name #>.MapTo(source));
+		}
+
+		/// <summary>
+        /// Borra una instancia de <#= tipo.Name #> en la base de datos
+        /// </summary>
+        /// <param name="source"><#= tipo.Name #> a borrar</param>
+        /// <returns>Número de <#= tipo.Name #> borrados</returns>
+		public virtual int Borrar<#= tipo.Name #>(Entities.<#= tipo.Name #> source)
+		{
+			return _Repository<#= tipo.Name #>.Delete<#= tipo.Name #>(Mapper<#= tipo.Name #>.MapTo(source));
+		}
+    }
+}
+<#
+        SaveOutput($"Service{tipo.Name}Base.cs");
+    }
+#>
+
+<#+
+    void SaveOutput(string outputFileName){
+        string templateDirectory = Path.Combine(Path.GetDirectoryName(Host.TemplateFile));
+        string outputFilePath = Path.Combine(templateDirectory, outputFileName);
+        File.Delete(outputFilePath);
+		File.WriteAllText(outputFilePath, this.GenerationEnvironment.ToString()); 
+        this.GenerationEnvironment.Remove(0, this.GenerationEnvironment.Length);
+    }
+#>
+<#+
+    bool IsPrimaryKey(PropertyInfo property)
+    {
+        return property.CustomAttributes.Any(x=> x.AttributeType == typeof(KeyAttribute));
+    }
+#>
+
+<#+
+    bool IsUniqueKey(PropertyInfo property)
+    {
+        return property.CustomAttributes.Any(x=> x.NamedArguments.Any(y => y.MemberName == "IsUnique" && (bool)y.TypedValue.Value));
+    }
+#>
+<#+
+    bool IsForeignKey(PropertyInfo property)
+    {
+        return property.CustomAttributes.Any(x=> x.AttributeType == typeof(ForeignKeyAttribute));
+    }
+#>
+<#+
+    IEnumerable<Type> GetTypesInNamespace(Assembly assembly, string nameSpace)
+    {
+        return assembly.GetTypes().Where(t => String.Equals(t.Namespace, nameSpace, StringComparison.Ordinal));
+    }
+#>
+<#+
+    string GetTypeString(Type type){
+        switch (type.Name)
+        {
+            case "Boolean":
+                return "bool";
+            case "Char":
+                return "char";
+            case "Byte":
+                return "byte";
+            case "Single":
+                return "float";
+            case "Double":
+                return "double";
+            case "Int32":
+                return "int";
+            case "String":
+                return "string";
+            case "ICollection`1":
+                return $"virtual ICollection<{GetTypeString(type.GetGenericArguments().Single())}>";
+            case "Nullable`1":
+                return $"{GetTypeString(type.GetGenericArguments().Single())}?";
+            default:
+                return type.Name;
+        }
+    }
+#>
+
+<#+
+    string FormatNameVariable(string input){
+        return input.First().ToString().ToLower() + input.Substring(1);
+    }
+#>

@@ -1,0 +1,192 @@
+﻿<#@ template debug="true" hostspecific="true" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="System.ComponentModel.DataAnnotations" #>
+<#@ assembly name="$(SolutionDir)packages\EntityFramework.6.2.0\lib\net45\EntityFramework.dll" #>
+<#@ assembly name="$(SolutionDir)WebAPI.Bd\bin\Debug\WebAPI.Bd.dll" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Reflection" #>
+<#@ import namespace="System.ComponentModel.DataAnnotations" #>
+<#@ import namespace="System.ComponentModel.DataAnnotations.Schema" #>
+<#@ import namespace="WebAPI.Bd.Model" #>
+
+<#
+    //CAMBIAR: Namespace del entity
+    string namespaceEntity = "WebAPI.Bd.Model"; 
+        //CAMBIAR: Namespace del dto 
+    string namespaceDTO = "WebAPI.Domain.Entities";
+    //CAMBIAR: Namespace del base
+    string namespaceBase = "WebAPI.Domain.Mapper.Base";
+    //CAMBIAR: Tipo del contexto
+    Type contextType = typeof(WebAPIContext); 
+    
+
+    IEnumerable<Type> tipos = GetTypesInNamespace(Assembly.GetAssembly(contextType), namespaceEntity).Where(x=>!x.Equals(contextType) && !x.BaseType.Equals(typeof(System.Enum)) && !x.Name.Equals("<>c"));
+
+    string namespaceClass = "WebAPI.Domain.Mapper";
+
+    foreach(Type tipo in tipos)
+    {
+        
+#>
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using <#= namespaceBase #>;
+
+
+namespace <#= namespaceClass #>
+{
+    using Entities = <#= namespaceEntity #>;
+    using DTO = <#= namespaceDTO #>;
+
+    /// <summary>
+    /// Clase <#= tipo.Name #> 
+    /// </summary>
+    public class Mapper<#= tipo.Name #> : Mapper<#= tipo.Name #>Base
+	{
+<#
+        IEnumerable<PropertyInfo> propiedades = tipo.GetProperties(BindingFlags.Instance|BindingFlags.Public).Where(x=> x.PropertyType.Name == "ICollection`1" || tipos.Contains(x.PropertyType));
+#>
+        public static DTO.<#= tipo.Name #> MapToRelated(Entities.<#= tipo.Name #> source, Type tipoRelacionado = null)
+        {
+            if(source == null)
+                return null;
+            DTO.<#= tipo.Name #> result = MapTo(source);
+<#
+        
+        foreach(PropertyInfo propiedad in propiedades)
+        {
+            if(tipos.Contains(propiedad.PropertyType))
+            {
+#>
+            if((tipoRelacionado == null || !tipoRelacionado.Equals(typeof(DTO.<#=propiedad.PropertyType.Name#>))) && source.<#=propiedad.Name#> != null)
+            {
+                result.<#=propiedad.Name#> = Mapper<#=propiedad.PropertyType.Name#>.MapToRelated(source.<#=propiedad.Name#>, typeof(DTO.<#= tipo.Name #>));
+            }
+<#
+            }
+            else
+            {
+#>
+            if((tipoRelacionado == null || !tipoRelacionado.Equals(typeof(DTO.<#=GetTypeString(propiedad.PropertyType.GetGenericArguments().Single())#>))) && source.<#=propiedad.Name#> != null)
+            {
+                result.<#=propiedad.Name#> = source.<#=propiedad.Name#>.Select(x=>Mapper<#=GetTypeString(propiedad.PropertyType.GetGenericArguments().Single())#>.MapToRelated(x, typeof(DTO.<#= tipo.Name #>))).ToList();
+            }
+<#
+            }
+
+        }
+#>
+            return result;
+        }
+
+        public static Entities.<#= tipo.Name #> MapToRelated(DTO.<#= tipo.Name #> source, Type tipoRelacionado = null)
+        {
+            if(source == null)
+                return null;
+            Entities.<#= tipo.Name #> result = MapTo(source);
+<#
+        
+        foreach(PropertyInfo propiedad in propiedades)
+        {
+            if(tipos.Contains(propiedad.PropertyType))
+            {
+#>
+            if((tipoRelacionado == null || !tipoRelacionado.Equals(typeof(Entities.<#=propiedad.PropertyType.Name#>))) && source.<#=propiedad.Name#> != null)
+            {
+                result.<#=propiedad.Name#> = Mapper<#=propiedad.PropertyType.Name#>.MapToRelated(source.<#=propiedad.Name#>, typeof(Entities.<#= tipo.Name #>));
+            }
+<#
+            }
+            else
+            {
+#>
+            if((tipoRelacionado == null || !tipoRelacionado.Equals(typeof(Entities.<#= GetTypeString(propiedad.PropertyType.GetGenericArguments().Single()) #>))) && source.<#=propiedad.Name#> != null)
+            {
+                result.<#=propiedad.Name#> = source.<#=propiedad.Name#>.Select(x=>Mapper<#=GetTypeString(propiedad.PropertyType.GetGenericArguments().Single())#>.MapToRelated(x, typeof(Entities.<#= tipo.Name #>))).ToList();
+            }
+<#
+            }
+
+        }
+#>
+            return result;
+        }
+
+
+    }
+}
+<#
+        SaveOutput($"Mapper{tipo.Name}.cs");
+    }
+#>
+
+<#+
+    void SaveOutput(string outputFileName){
+        string templateDirectory = Path.Combine(Path.GetDirectoryName(Host.TemplateFile));
+        string outputFilePath = Path.Combine(templateDirectory, outputFileName);
+        
+        File.Delete(outputFilePath);
+        File.WriteAllText(outputFilePath, this.GenerationEnvironment.ToString()); 
+        
+        this.GenerationEnvironment.Remove(0, this.GenerationEnvironment.Length);
+    }
+#>
+
+<#+
+    bool IsPrimaryKey(PropertyInfo property)
+    {
+        return property.CustomAttributes.Any(x=> x.AttributeType == typeof(KeyAttribute));
+    }
+#>
+
+<#+
+    bool IsUniqueKey(PropertyInfo property)
+    {
+        return property.CustomAttributes.Any(x=> x.NamedArguments.Any(y => y.MemberName == "IsUnique" && (bool)y.TypedValue.Value));
+    }
+#>
+
+<#+
+    IEnumerable<Type> GetTypesInNamespace(Assembly assembly, string nameSpace)
+    {
+        return assembly.GetTypes().Where(t => String.Equals(t.Namespace, nameSpace, StringComparison.Ordinal));
+    }
+#>
+
+<#+
+    string GetTypeString(Type type){
+        switch (type.Name)
+        {
+            case "Boolean":
+                return "bool";
+            case "Char":
+                return "char";
+            case "Byte":
+                return "byte";
+            case "Single":
+                return "float";
+            case "Double":
+                return "double";
+            case "Int32":
+                return "int";
+            case "String":
+                return "string";
+            case "ICollection`1":
+                return $"virtual ICollection<{GetTypeString(type.GetGenericArguments().Single())}>";
+            case "Nullable`1":
+                return $"{GetTypeString(type.GetGenericArguments().Single())}?";
+            default:
+                return type.Name;
+        }
+    }
+#>
+
+<#+
+    string FormatNameVariable(string input){
+        return input.First().ToString().ToLower() + input.Substring(1);
+    }
+#>
